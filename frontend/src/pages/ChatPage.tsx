@@ -1,4 +1,5 @@
 import { ChatArea } from '../components/Chat/ChatArea';
+import { ConnectionGate } from '../components/Chat/ConnectionGate';
 import { SystemPanel } from '../components/Chat/SystemPanel';
 import { useAppStore } from '../lib/store';
 
@@ -8,7 +9,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="flex-1 min-w-0">
-        <ChatArea />
+        <ConnectionGate><ChatArea /></ConnectionGate>
       </div>
       {systemPanelOpen && <SystemPanel />}
     </div>

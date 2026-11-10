@@ -22,6 +22,9 @@ export async function* streamChat(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('OpenJarvis access key rejected. Open Settings → Connection and verify OPENJARVIS_API_KEY.');
+    }
     throw new Error(`Chat request failed: ${response.status}`);
   }
 
