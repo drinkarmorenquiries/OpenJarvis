@@ -282,10 +282,10 @@ export const useAppStore = create<AppState>((set, get) => {
 
     models: [],
     modelsLoading: true,
-    // This iPhone deployment uses a single Gemini cloud model. The server's
+    // This iPhone deployment uses a supported Gemini cloud model with failover. The server's
     // installed-model endpoint deliberately excludes direct cloud models.
     selectedModel: typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)
-      ? 'gemini-2.5-flash'
+      ? 'gemini-3.6-flash'
       : '',
     serverInfo: null,
     savings: null,
@@ -500,7 +500,7 @@ export const useAppStore = create<AppState>((set, get) => {
           models.find((m) => !isEmbedOnlyModel(m.id))?.id ||
           state.serverInfo?.model ||
           (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)
-            ? 'gemini-2.5-flash'
+            ? 'gemini-3.6-flash'
             : '');
 
         const currentIsBad =
@@ -511,7 +511,7 @@ export const useAppStore = create<AppState>((set, get) => {
           !models.some((m) => m.id === state.selectedModel) &&
           state.selectedModel !== state.serverInfo?.model &&
           !(typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window) &&
-            state.selectedModel === 'gemini-2.5-flash');
+            state.selectedModel === 'gemini-3.6-flash');
 
         if (!state.selectedModel || currentIsBad || currentMissing) {
           // Prefer a real chat model. If none exist, clear a bad/missing
