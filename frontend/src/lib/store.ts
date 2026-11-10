@@ -62,7 +62,7 @@ function loadConversations(): ConversationStore {
       for (const conversation of Object.values(parsed.conversations ?? {}) as Conversation[]) {
         // Migrate retired Gemini model on existing iPhone chats without removing messages.
         if (conversation.model === 'gemini-2.5-flash') {
-          conversation.model = 'gemini-3.6-flash';
+          conversation.model = 'gemini-3.5-flash-lite';
           repaired = true;
         }
         for (const message of conversation.messages ?? []) {
@@ -134,7 +134,7 @@ function loadSettings(): Settings {
     if (!raw) return defaults;
     const saved = { ...defaults, ...JSON.parse(raw) } as Settings;
     // Preserve all preferences, replacing only the now-retired Gemini default.
-    if (saved.defaultModel === 'gemini-2.5-flash') saved.defaultModel = 'gemini-3.6-flash';
+    if (saved.defaultModel === 'gemini-2.5-flash') saved.defaultModel = 'gemini-3.5-flash-lite';
     return saved;
   } catch {
     return defaults;
@@ -293,7 +293,7 @@ export const useAppStore = create<AppState>((set, get) => {
     // This iPhone deployment uses a supported Gemini cloud model with failover. The server's
     // installed-model endpoint deliberately excludes direct cloud models.
     selectedModel: typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)
-      ? 'gemini-3.6-flash'
+      ? 'gemini-3.5-flash-lite'
       : '',
     serverInfo: null,
     savings: null,
@@ -508,7 +508,7 @@ export const useAppStore = create<AppState>((set, get) => {
           models.find((m) => !isEmbedOnlyModel(m.id))?.id ||
           state.serverInfo?.model ||
           (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)
-            ? 'gemini-3.6-flash'
+            ? 'gemini-3.5-flash-lite'
             : '');
 
         const currentIsBad =
@@ -519,7 +519,7 @@ export const useAppStore = create<AppState>((set, get) => {
           !models.some((m) => m.id === state.selectedModel) &&
           state.selectedModel !== state.serverInfo?.model &&
           !(typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window) &&
-            state.selectedModel === 'gemini-3.6-flash');
+            state.selectedModel === 'gemini-3.5-flash-lite');
 
         if (!state.selectedModel || currentIsBad || currentMissing) {
           // Prefer a real chat model. If none exist, clear a bad/missing

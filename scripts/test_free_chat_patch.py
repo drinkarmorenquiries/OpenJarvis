@@ -42,6 +42,8 @@ def run() -> None:
     assert 'resp.status_code == 429' in fixed
     assert '"gemini-3.1-flash-lite"' in fixed
     assert '"gemini-3.5-flash-lite"' in fixed
+    assert 'resp.status_code == 400' in fixed
+    assert 'Google Gemini rejected the request' in fixed
     assert '"temperature": temperature' not in fixed
     assert '"systemInstruction"' in fixed
     assert '"contents": [{"role": "user"' in fixed

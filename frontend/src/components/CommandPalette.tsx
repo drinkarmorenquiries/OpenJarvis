@@ -58,7 +58,8 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
     envKey: 'GEMINI_API_KEY',
     models: [
       { id: 'gemini-2.5-pro', desc: 'Gemini 2.5 Pro — flagship' },
-      { id: 'gemini-2.5-flash', desc: 'Gemini 2.5 Flash — fast' },
+      { id: 'gemini-3.5-flash-lite', desc: 'Gemini 3.5 Flash-Lite — free tier' },
+      { id: 'gemini-2.5-flash', desc: 'Gemini 2.5 Flash — legacy' },
       { id: 'gemini-3-pro', desc: 'Gemini 3 Pro — latest' },
     ],
   },
@@ -478,7 +479,8 @@ export function CommandPalette() {
                 // The browser uses provider credentials configured on the backend.
                 // Only expose the actual model configured for this server.
                 const serverHasModel = !desktopKeyStorage &&
-                  provider.models.some((model) => model.id === serverInfo?.model);
+                  (provider.models.some((model) => model.id === serverInfo?.model) ||
+                   (provider.name === 'Google' && !!serverInfo?.model?.startsWith('gemini-')));
                 const hasKey = hasSavedKey || !!key.trim() || serverHasModel;
                 const isVisible = showKeys[provider.envKey];
                 const isSaving = savingKey === provider.envKey;
@@ -531,7 +533,8 @@ export function CommandPalette() {
                     {/* Models for this provider (only show if key is set) */}
                     {hasKey && (
                       <div className="ml-5 flex flex-col gap-1">
-                        {provider.models.filter((model) => desktopKeyStorage || model.id === serverInfo?.model).map((model) => {
+                        {provider.models.filter((model) => desktopKeyStorage || model.id === serverInfo?.model ||
+                        (provider.name === 'Google' && model.id === 'gemini-3.5-flash-lite')).map((model) => {
                           const isActive = model.id === selectedModel;
                           return (
                             <button
