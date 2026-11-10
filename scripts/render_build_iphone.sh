@@ -151,7 +151,8 @@ jarvis serve --help > /dev/null
 python scripts/patch_trace_store.py
 python scripts/test_trace_store_patch.py
 
-# Reduce free Gemini RPM usage on ordinary iPhone chat.
+# Reduce free Gemini RPM usage and normalize Gemini 3.6 requests on iPhone chat.
+# This also tests the generated cloud-router code before packaging.
 python scripts/patch_free_chat.py
 python scripts/test_free_chat_patch.py
 
