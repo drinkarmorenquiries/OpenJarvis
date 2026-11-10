@@ -146,6 +146,11 @@ print(
 PY
 jarvis serve --help > /dev/null
 
+# Fix bytes returned by tools crashing SQLite trace persistence.
+# This patches the installed PyPI module only, leaving all other code intact.
+python scripts/patch_trace_store.py
+python scripts/test_trace_store_patch.py
+
 
 # Render's Python runtime might not include a compatible Node toolchain.
 if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major>22||(major===22&&minor>=22)?0:1)' || ! command -v npm >/dev/null 2>&1; then
