@@ -101,6 +101,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const models = useAppStore((s) => s.models);
+  const serverInfo = useAppStore((s) => s.serverInfo);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const setModels = useAppStore((s) => s.setModels);
@@ -474,7 +475,11 @@ export function CommandPalette() {
               {CLOUD_PROVIDERS.map((provider) => {
                 const key = apiKeys[provider.envKey] || '';
                 const hasSavedKey = !!cloudKeyStatus[provider.envKey];
-                const hasKey = hasSavedKey || !!key.trim();
+                // The browser uses provider credentials configured on the backend.
+                // Only expose the actual model configured for this server.
+                const serverHasModel = !desktopKeyStorage &&
+                  provider.models.some((model) => model.id === serverInfo?.model);
+                const hasKey = hasSavedKey || !!key.trim() || serverHasModel;
                 const isVisible = showKeys[provider.envKey];
                 const isSaving = savingKey === provider.envKey;
 
@@ -526,7 +531,7 @@ export function CommandPalette() {
                     {/* Models for this provider (only show if key is set) */}
                     {hasKey && (
                       <div className="ml-5 flex flex-col gap-1">
-                        {provider.models.map((model) => {
+                        {provider.models.filter((model) => desktopKeyStorage || model.id === serverInfo?.model).map((model) => {
                           const isActive = model.id === selectedModel;
                           return (
                             <button

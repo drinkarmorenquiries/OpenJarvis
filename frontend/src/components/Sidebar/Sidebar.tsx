@@ -28,6 +28,7 @@ export function Sidebar() {
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const createConversation = useAppStore((s) => s.createConversation);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const serverInfo = useAppStore((s) => s.serverInfo);
@@ -46,10 +47,12 @@ export function Sidebar() {
     // Don't create a new chat if the current one is empty
     if (messages.length === 0) {
       navigate('/');
+      if (window.innerWidth < 768) setSidebarOpen(false);
       return;
     }
     createConversation(selectedModel);
     navigate('/');
+    if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
   const navItems = [
@@ -198,7 +201,10 @@ export function Sidebar() {
               return (
                 <button
                   key={item.path}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => {
+                    navigate(item.path);
+                    if (window.innerWidth < 768) setSidebarOpen(false);
+                  }}
                   className="relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left cursor-pointer"
                   style={{
                     background: isActive ? 'var(--color-accent-subtle)' : 'transparent',

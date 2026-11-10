@@ -289,8 +289,8 @@ export const useAppStore = create<AppState>((set, get) => {
     settings: loadSettings(),
 
     commandPaletteOpen: false,
-    sidebarOpen: true,
-    systemPanelOpen: true,
+    sidebarOpen: typeof window !== 'undefined' && window.innerWidth >= 768,
+    systemPanelOpen: typeof window !== 'undefined' && window.innerWidth >= 1024,
 
     optInEnabled: localStorage.getItem(OPTIN_KEY) === 'true',
     optInDisplayName: localStorage.getItem(OPTIN_NAME_KEY) || '',
@@ -494,13 +494,16 @@ export const useAppStore = create<AppState>((set, get) => {
             state.settings.defaultModel) ||
           chatModels[0]?.id ||
           models.find((m) => !isEmbedOnlyModel(m.id))?.id ||
+          state.serverInfo?.model ||
           '';
 
         const currentIsBad =
           !!state.selectedModel && isEmbedOnlyModel(state.selectedModel);
+        // Server-configured cloud models need not appear in the installed list.
         const currentMissing =
           !!state.selectedModel &&
-          !models.some((m) => m.id === state.selectedModel);
+          !models.some((m) => m.id === state.selectedModel) &&
+          state.selectedModel !== state.serverInfo?.model;
 
         if (!state.selectedModel || currentIsBad || currentMissing) {
           // Prefer a real chat model. If none exist, clear a bad/missing
@@ -514,7 +517,11 @@ export const useAppStore = create<AppState>((set, get) => {
       }),
     setModelsLoading: (loading: boolean) => set({ modelsLoading: loading }),
     setSelectedModel: (model: string) => set({ selectedModel: model }),
-    setServerInfo: (info: ServerInfo | null) => set({ serverInfo: info }),
+    setServerInfo: (info: ServerInfo | null) =>
+      set((state) => ({
+        serverInfo: info,
+        selectedModel: state.selectedModel || info?.model || '',
+      })),
     setSavings: (data: SavingsData | null) => set({ savings: data }),
     incrementSavings: (usage: TokenUsage) => {
       const cur = get().savings;
