@@ -39,10 +39,13 @@ def run() -> None:
         + "\n\nasync def stream_local():\n    pass\n"
     )
     fixed = patch_cloud_router(cloud)
-    assert 'resp.status_code == 429' in fixed
+    assert 'resp.status_code in (404, 429, 503)' in fixed
     assert '"gemini-3.1-flash-lite"' in fixed
     assert '"gemini-3.5-flash-lite"' in fixed
-    assert 'resp.status_code == 400' in fixed
+    assert 'resp.status_code in (400, 403)' in fixed
+    assert 'for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY")' in fixed
+    assert 'Google rejected both configured Gemini API keys' in fixed
+    assert 'resp.status_code == 429' not in fixed
     assert 'Google Gemini rejected the request' in fixed
     assert '"temperature": temperature' not in fixed
     assert '"systemInstruction"' in fixed

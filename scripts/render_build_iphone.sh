@@ -156,6 +156,9 @@ python scripts/test_trace_store_patch.py
 python scripts/patch_free_chat.py
 python scripts/test_free_chat_patch.py
 
+# Verify credential status without revealing any key or generating paid tokens.
+python scripts/check_gemini_credentials.py
+
 
 # Render's Python runtime might not include a compatible Node toolchain.
 if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major>22||(major===22&&minor>=22)?0:1)' || ! command -v npm >/dev/null 2>&1; then

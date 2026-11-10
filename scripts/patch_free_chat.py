@@ -32,23 +32,23 @@ _NEW_GOOGLE = '''async def _stream_google(
     temperature: float,
     max_tokens: int,
 ) -> AsyncIterator[str]:
-    """Stream one inference; on an RPM 429 try up to two free-tier models.
+    """Use a valid configured Gemini key and only free Flash-family models.
 
-    Only initial HTTP failures are retried. Once response tokens begin, never
-    re-submit the prompt, avoiding duplicate messages and quota waste.
+    Avoid repeated agent calls and fail over between the two differently
+    named Google credentials only if the provider rejects authentication.
+    No credentials are included in URLs, error text, or log output.
     """
     import logging
 
     keys = _load_keys()
-    # Match the existing server cloud engine's preference when both are set.
-    api_key = keys.get("GOOGLE_API_KEY") or keys.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("Google API key not configured on the server")
+    credentials = []
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        value = str(keys.get(name, "")).strip().strip('"').strip("'")
+        if value and not any(existing == value for _, existing in credentials):
+            credentials.append((name, value))
+    if not credentials:
+        raise RuntimeError("Neither GEMINI_API_KEY nor GOOGLE_API_KEY is configured on Render")
 
-    # The original app stores only text, not Gemini thought signatures.
-    # Gemini 3.6+ rejects replayed model turns lacking required signatures.
-    # Keep prior conversation context as quoted transcript inside ONE user turn
-    # rather than forging model turns (or a synthetic "Understood" reply).
     system_notes: list[str] = []
     dialogue: list[tuple[str, str]] = []
     for msg in messages:
@@ -66,7 +66,6 @@ _NEW_GOOGLE = '''async def _stream_google(
             or content.startswith("Sorry, an error occurred:")
             or content.startswith("No response was generated.")
         ):
-            # Provider faults aren't factual conversation context.
             continue
         if role in ("user", "assistant", "model"):
             dialogue.append(("user" if role == "user" else "assistant", content))
@@ -93,111 +92,111 @@ _NEW_GOOGLE = '''async def _stream_google(
 
     payload: dict[str, Any] = {
         "contents": [{"role": "user", "parts": [{"text": current_prompt}]}],
-        # For Gemini 3.6+ custom temperature is deprecated and may be rejected.
         "generationConfig": {"maxOutputTokens": max_tokens},
     }
     if system_notes:
         payload["systemInstruction"] = {
             "parts": [{"text": "\\n\\n".join(system_notes)[:6000]}]
         }
-    model_ids = (
-        list(dict.fromkeys(
-            (model, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
-        ))
-        if model.startswith("gemini-") else [model]
-    )
-    # Never put the API key in a logged URL.
-    headers = {"x-goog-api-key": api_key}
+
+    model_ids = list(dict.fromkeys(
+        (model, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+    )) if model.startswith("gemini-") else [model]
+    logger = logging.getLogger("openjarvis.server")
 
     async with httpx.AsyncClient(timeout=180) as client:
         for idx, candidate in enumerate(model_ids):
-            url = (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{candidate}:streamGenerateContent?alt=sse"
-            )
-            async with client.stream(
-                "POST", url, json=payload, headers=headers
-            ) as resp:
-                if resp.status_code == 429:
-                    if idx < len(model_ids) - 1:
-                        logging.getLogger("openjarvis.server").warning(
-                            "Google free tier rate-limited %s; trying Flash-Lite",
-                            candidate,
+            next_model = False
+            for key_idx, (key_name, api_key) in enumerate(credentials):
+                url = (
+                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{candidate}:streamGenerateContent?alt=sse"
+                )
+                async with client.stream(
+                    "POST", url, json=payload,
+                    headers={"x-goog-api-key": api_key},
+                ) as resp:
+                    if resp.status_code in (400, 403):
+                        # Only structured Google status/reason, never raw body or key.
+                        raw = (await resp.aread())[:8192]
+                        try:
+                            detail = json.loads(raw).get("error", {})
+                            status = str(detail.get("status", "INVALID_ARGUMENT"))
+                            message = str(detail.get("message", ""))
+                            reasons = [
+                                d.get("reason", "")
+                                for d in detail.get("details", [])
+                                if isinstance(d, dict)
+                            ]
+                        except (ValueError, TypeError, AttributeError):
+                            status, message, reasons = "UNKNOWN", "", []
+                        bad_key = (
+                            "API_KEY_INVALID" in (status + " " + " ".join(reasons))
+                            or "API key not valid" in message
+                            or "API_KEY_SERVICE_BLOCKED" in " ".join(reasons)
                         )
-                        continue
-                    # Don't leak the full Google quota error into a chat bubble.
-                    raise RuntimeError(
-                        "Google free-tier limit reached on all configured "
-                        "models. Try again after about one minute. "
-                        "No paid model was used."
-                    )
-                if resp.status_code == 404 and idx < len(model_ids) - 1:
-                    logging.getLogger("openjarvis.server").warning(
-                        "Gemini model %s not found; trying Flash-Lite", candidate
-                    )
-                    continue
-                # Google places the real INVALID_ARGUMENT cause in its JSON body.
-                # Keep API credentials in request headers; never include them in logs.
-                if resp.status_code == 400:
-                    raw = (await resp.aread())[:4096]
-                    try:
-                        detail = json.loads(raw).get("error", {})
-                        status = detail.get("status", "INVALID_ARGUMENT")
-                        message = str(detail.get("message", "Request rejected"))
-                    except (ValueError, AttributeError, TypeError):
-                        status, message = "INVALID_ARGUMENT", "Request rejected"
-                    if ("API_KEY_INVALID" in status or
-                            "API key not valid" in message):
+                        if bad_key:
+                            logger.warning("Gemini authentication rejected %s; trying another configured key if present", key_name)
+                            if key_idx < len(credentials) - 1:
+                                continue
+                            raise RuntimeError(
+                                "Google rejected both configured Gemini API keys. "
+                                "A valid Google AI Studio key is required on Render. "
+                                "Your OpenJarvis iPhone access key is separate."
+                            )
+                        if resp.status_code == 403 and key_idx < len(credentials) - 1:
+                            logger.warning("Gemini denied %s; trying alternative configured key", key_name)
+                            continue
+                        if "thought_signature" in message.lower():
+                            raise RuntimeError(
+                                "This conversation has incompatible Gemini history. "
+                                "Start a new conversation and try again."
+                            )
+                        if idx < len(model_ids) - 1:
+                            logger.warning("Gemini %s rejected request with %s; trying free Flash-Lite alternative", candidate, status[:64])
+                            next_model = True
+                            break
                         raise RuntimeError(
-                            "Google rejected the API key configured on Render. "
-                            "The OpenJarvis iPhone access key is different."
+                            "Google rejected the Gemini request ("
+                            + str(resp.status_code)
+                            + ": " + status[:64] + "). "
+                            "Check the Google API configuration."
                         )
-                    # Retry only on a model-specific 400; maintain free-tier
-                    # limits and do not repeat a request after streaming starts.
-                    if idx < len(model_ids) - 1:
-                        logging.getLogger("openjarvis.server").warning(
-                            "Google rejected %s with 400 (%s); trying "
-                            "verified Flash-Lite free-tier alternative",
-                            candidate, status,
-                        )
-                        continue
-                    if "thought_signature" in message.lower():
+
+                    if resp.status_code in (404, 429, 503):
+                        if idx < len(model_ids) - 1:
+                            logger.warning("Gemini %s returned HTTP %s; trying free Flash-Lite alternative", candidate, resp.status_code)
+                            next_model = True
+                            break
                         raise RuntimeError(
-                            "This conversation has incompatible Gemini "
-                            "history. Start a new chat and try again."
+                            "Google Gemini free models are temporarily "
+                            "unavailable or rate-limited. Please try again later."
                         )
-                    # Do not leak arbitrary provider response text, which may
-                    # include request content. Report the provider status only.
-                    raise RuntimeError(
-                        "Google Gemini rejected the request (400: "
-                        + status[:64] +
-                        "). Try a new chat or another model."
-                    )
-                if resp.status_code == 403:
-                    raise RuntimeError(
-                        "Google has denied this Gemini API request (403). "
-                        "Check the API key and the free-tier model access."
-                    )
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data = line[6:].strip()
-                    try:
-                        chunk = json.loads(data)
-                        parts = (
-                            chunk.get("candidates", [{}])[0]
-                            .get("content", {})
-                            .get("parts", [])
-                        )
-                        for part in parts:
-                            text = part.get("text", "")
-                            if text:
-                                yield text
-                    except (ValueError, KeyError, IndexError, TypeError):
-                        continue
-                return
+
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:].strip()
+                        try:
+                            chunk = json.loads(data)
+                            parts = (
+                                chunk.get("candidates", [{}])[0]
+                                .get("content", {})
+                                .get("parts", [])
+                            )
+                            for part in parts:
+                                text = part.get("text", "")
+                                if text:
+                                    yield text
+                        except (ValueError, KeyError, IndexError, TypeError):
+                            continue
+                    return
+            if next_model:
+                continue
+            raise RuntimeError("No valid Gemini API key was accepted by Google")
 '''
+
 
 _ERROR_HELPER = '''def _jarvis_mobile_chat_error(exc: Exception) -> str:
     """Show rate limits safely, while keeping original diagnostics in logs."""
