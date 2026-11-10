@@ -7,6 +7,8 @@ on:
       - 'frontend/**'
       - '.github/workflows/iphone-ui.yml'
       - 'scripts/render_build_iphone.sh'
+      - 'scripts/patch_free_chat.py'
+      - 'scripts/test_free_chat_patch.py'
   workflow_dispatch:
 
 permissions:
