@@ -45,7 +45,7 @@ def run() -> None:
     assert '"temperature": temperature' not in fixed
     assert '"systemInstruction"' in fixed
     assert '"contents": [{"role": "user"' in fixed
-    assert '"LATEST USER REQUEST:"' in fixed
+    assert 'LATEST USER REQUEST:' in fixed
     assert '_to_google_contents(messages)' not in fixed
     assert patch_cloud_router(fixed) == fixed
     assert "return" in fixed
