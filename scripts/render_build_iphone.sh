@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 python -m pip install "OpenJarvis[server,inference-google]==1.0.4" "google-genai<3.0.0"
 
 # Render's Python runtime might not include a compatible Node toolchain.
-if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' || ! command -v npm >/dev/null 2>&1; then
+if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major>22||(major===22&&minor>=22)?0:1)' || ! command -v npm >/dev/null 2>&1; then
   case "$(uname -m)" in
     x86_64) NODE_ARCH=x64; NODE_SHA=e798599612f4bb71333a3397ab0d095fd62214e115aea45aa858a145fc72d67e ;;
     aarch64) NODE_ARCH=arm64; NODE_SHA=aa881151bd0f9f154a0424dd60a72e9ce10672619121658c278a24327ef46831 ;;
