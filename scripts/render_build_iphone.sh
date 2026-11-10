@@ -20,6 +20,10 @@ if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.v
   export PATH="$HOME/.local/openjarvis-node/bin:$PATH"
 fi
 
+# Use the exact npm version that passed the independent GitHub build.
+mkdir -p "$HOME/.local/openjarvis-npm"
+npm install --prefix "$HOME/.local/openjarvis-npm" --no-audit --no-fund --no-save npm@11.19.0
+export PATH="$HOME/.local/openjarvis-npm/node_modules/.bin:$PATH"
 echo "Node $(node --version), npm $(npm --version)"
 (cd frontend && npm ci --no-audit --no-fund && npm run build)
 
