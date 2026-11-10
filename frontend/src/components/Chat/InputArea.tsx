@@ -80,7 +80,16 @@ function useResearchCorpusSync(enabled: boolean): {
 }
 
 export function InputArea() {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => {
+    // Locally drafted project briefing; nothing is sent until the user presses Send.
+    try {
+      const draft = sessionStorage.getItem('oj-project-chat-draft') || '';
+      sessionStorage.removeItem('oj-project-chat-draft');
+      return draft.slice(0, 7000);
+    } catch {
+      return '';
+    }
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
