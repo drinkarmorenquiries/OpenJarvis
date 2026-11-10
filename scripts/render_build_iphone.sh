@@ -6,9 +6,9 @@ cd "$(dirname "$0")/.."
 python -m pip install "OpenJarvis[server,inference-google]==1.0.4" "google-genai<3.0.0"
 
 
-# Render's start command is fixed in the dashboard to an older Gemini model.
-# Keep the existing free service, migrate startup to the supported Gemini 3.8
-# model, and ensure previously saved iPhone chats continue to work.
+# Keep the existing Free Render start command compatible with current Gemini
+# models and fall back safely on another free-tier model when Google is busy.
+# No billing, provider or service changes are made by this build step.
 python - <<'PY'
 from importlib.util import find_spec
 from pathlib import Path
@@ -17,13 +17,13 @@ import sys
 launcher = Path(sys.executable).parent / "jarvis"
 launch_src = launcher.read_text()
 if "import sys\n" not in launch_src:
-    raise RuntimeError("OpenJarvis launcher changed; refusing unsafe model migration")
+    raise RuntimeError("OpenJarvis launcher shape changed")
 shim = (
     "import sys\n"
-    "# Use supported Gemini model for this existing Render start command.\n"
+    "# Translate legacy Render model argument to the current supported model.\n"
     "for _i in range(len(sys.argv) - 1):\n"
     "    if sys.argv[_i] in ('--model', '-m') and sys.argv[_i + 1] == 'gemini-2.5-flash':\n"
-    "        sys.argv[_i + 1] = 'gemini-3.8-flash'\n"
+    "        sys.argv[_i + 1] = 'gemini-3.6-flash'\n"
 )
 launch_src = launch_src.replace("import sys\n", shim, 1)
 compile(launch_src, str(launcher), "exec")
@@ -34,42 +34,115 @@ if not spec or not spec.origin:
 engine_path = Path(spec.origin)
 engine_src = engine_path.read_text()
 model_list = "_GOOGLE_MODELS = [\n"
-if model_list not in engine_src:
-    raise RuntimeError("OpenJarvis Google model list changed")
+if engine_src.count(model_list) != 1:
+    raise RuntimeError("OpenJarvis model registry changed")
+
+resilient_google = '''
+# Render iPhone Gemini stability fix: prioritize working free-tier stable
+# models, never silently switch to a different provider or paid API.
+_RENDER_GOOGLE_FALLBACKS = (
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3.8-flash",
+)
+
+
+def _render_google_models(requested: str) -> list[str]:
+    if not requested.startswith("gemini"):
+        return [requested]
+    if requested in ("gemini-2.5-flash", "gemini-3.8-flash"):
+        return list(_RENDER_GOOGLE_FALLBACKS)
+    return list(dict.fromkeys((requested,) + _RENDER_GOOGLE_FALLBACKS))
+
+
+def _render_google_capacity_error(exc: Exception) -> bool:
+    # Only try another model on an unavailable or unsupported model.
+    # Do not hide an invalid API key, billing problem or bad prompt.
+    code = getattr(exc, "code", None)
+    if code is None:
+        code = getattr(exc, "status_code", None)
+    return code in (503, 404) or (
+        "503 UNAVAILABLE" in str(exc) or "404 NOT_FOUND" in str(exc)
+    )
+
+
+def _render_google_generate(client, *, model, contents, config):
+    candidates = _render_google_models(model)
+    for index, candidate in enumerate(candidates):
+        try:
+            return client.models.generate_content(
+                model=candidate, contents=contents, config=config
+            )
+        except Exception as exc:
+            if not _render_google_capacity_error(exc) or index == len(candidates) - 1:
+                raise
+            logger.warning("Gemini %s unavailable; trying free-tier fallback", candidate)
+    raise RuntimeError("No Gemini model available")
+
+
+def _render_google_stream(client, *, model, contents, config):
+    candidates = _render_google_models(model)
+    for index, candidate in enumerate(candidates):
+        emitted = False
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=candidate, contents=contents, config=config
+            ):
+                emitted = True
+                yield chunk
+            return
+        except Exception as exc:
+            # Once tokens have begun streaming, never duplicate partial output.
+            if emitted or not _render_google_capacity_error(exc) or index == len(candidates) - 1:
+                raise
+            logger.warning("Gemini %s stream unavailable; trying fallback", candidate)
+    raise RuntimeError("No Gemini streaming model available")
+
+
+'''
 engine_src = engine_src.replace(
     model_list,
-    'def _render_legacy_model(model: str) -> str:\n'
-    '    return "gemini-3.8-flash" if model == "gemini-2.5-flash" else model\n\n\n'
-    + model_list + '    "gemini-3.8-flash",\n',
+    resilient_google + model_list
+    + '    "gemini-3.6-flash",\n'
+    + '    "gemini-3.5-flash-lite",\n'
+    + '    "gemini-3.1-flash-lite",\n'
+    + '    "gemini-3.8-flash",\n',
     1,
 )
-legacy_config = (
+old_config = (
     "config = genai_types.GenerateContentConfig(\n"
     "            temperature=temperature,\n"
     "            max_output_tokens=max_tokens,\n"
     "        )"
 )
-modern_config = (
+new_config = (
     "config = genai_types.GenerateContentConfig(\n"
     "            max_output_tokens=max_tokens,\n"
     "        )"
 )
-config_count = engine_src.count(legacy_config)
+config_count = engine_src.count(old_config)
 if not config_count:
-    raise RuntimeError("Google config signature changed")
-engine_src = engine_src.replace(legacy_config, modern_config)
-legacy_call = "model=model,\n            contents=contents,\n            config=config,"
-call_count = engine_src.count(legacy_call)
-if not call_count:
-    raise RuntimeError("Google SDK call sites changed")
+    raise RuntimeError("Google sampling config signature changed")
+engine_src = engine_src.replace(old_config, new_config)
+generate_call = "self._google_client.models.generate_content("
+stream_call = "self._google_client.models.generate_content_stream("
+generate_count = engine_src.count(generate_call)
+stream_count = engine_src.count(stream_call)
+if generate_count != 1 or stream_count != 2:
+    raise RuntimeError(f"Unexpected Gemini call sites: {generate_count}/{stream_count}")
 engine_src = engine_src.replace(
-    legacy_call,
-    "model=_render_legacy_model(model),\n            contents=contents,\n            config=config,",
+    generate_call, "_render_google_generate(self._google_client, "
+).replace(
+    stream_call, "_render_google_stream(self._google_client, "
 )
 compile(engine_src, str(engine_path), "exec")
 launcher.write_text(launch_src)
 engine_path.write_text(engine_src)
-print(f"Gemini 3.8 migration: patched {config_count} config(s), {call_count} call(s)")
+print(
+    f"Gemini free-tier fallback installed: {generate_count} sync, "
+    f"{stream_count} streams, {config_count} configs"
+)
 PY
 jarvis serve --help > /dev/null
 
