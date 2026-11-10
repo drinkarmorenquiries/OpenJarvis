@@ -60,6 +60,11 @@ function loadConversations(): ConversationStore {
     if (parsed.version === 1) {
       let repaired = false;
       for (const conversation of Object.values(parsed.conversations ?? {}) as Conversation[]) {
+        // Migrate retired Gemini model on existing iPhone chats without removing messages.
+        if (conversation.model === 'gemini-2.5-flash') {
+          conversation.model = 'gemini-3.6-flash';
+          repaired = true;
+        }
         for (const message of conversation.messages ?? []) {
           for (const toolCall of message.toolCalls ?? []) {
             const argumentsText = serializeToolCallArguments(toolCall.arguments);
@@ -127,7 +132,10 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaults;
-    return { ...defaults, ...JSON.parse(raw) };
+    const saved = { ...defaults, ...JSON.parse(raw) } as Settings;
+    // Preserve all preferences, replacing only the now-retired Gemini default.
+    if (saved.defaultModel === 'gemini-2.5-flash') saved.defaultModel = 'gemini-3.6-flash';
+    return saved;
   } catch {
     return defaults;
   }
