@@ -46,7 +46,7 @@ def run() -> None:
     assert 'for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY")' in fixed
     assert 'Google rejected both configured Gemini API keys' in fixed
     assert 'resp.status_code == 429' not in fixed
-    assert 'Google Gemini rejected the request' in fixed
+    assert 'Google rejected both configured Gemini API keys' in fixed
     assert '"temperature": temperature' not in fixed
     assert '"systemInstruction"' in fixed
     assert '"contents": [{"role": "user"' in fixed
