@@ -35,6 +35,8 @@ jobs:
         run: npm run build
       - name: Check Python trace serializer for binary tool results
         run: python3 scripts/test_trace_store_patch.py
+      - name: Check free Gemini chat controls
+        run: python3 scripts/test_free_chat_patch.py
       - name: Verify packaged web assets
         run: test -s src/openjarvis/server/static/index.html
       - name: Save compiled frontend for inspection

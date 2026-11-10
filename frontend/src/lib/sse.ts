@@ -1,5 +1,5 @@
 import type { ResearchEvent, SSEEvent } from '../types';
-import { getBase, authHeaders } from './api';
+import { getBase, authHeaders, isTauri } from './api';
 
 export interface ChatRequest {
   model: string;
@@ -16,7 +16,7 @@ export async function* streamChat(
   const base = getBase();
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    headers: authHeaders({ 'Content-Type': 'application/json', ...(!isTauri() ? { 'X-Jarvis-Chat-Mode': 'direct' } : {}) }),
     body: JSON.stringify(request),
     signal,
   });

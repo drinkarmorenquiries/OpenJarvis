@@ -151,6 +151,10 @@ jarvis serve --help > /dev/null
 python scripts/patch_trace_store.py
 python scripts/test_trace_store_patch.py
 
+# Reduce free Gemini RPM usage on ordinary iPhone chat.
+python scripts/patch_free_chat.py
+python scripts/test_free_chat_patch.py
+
 
 # Render's Python runtime might not include a compatible Node toolchain.
 if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major>22||(major===22&&minor>=22)?0:1)' || ! command -v npm >/dev/null 2>&1; then
