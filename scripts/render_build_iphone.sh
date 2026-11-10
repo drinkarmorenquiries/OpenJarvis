@@ -5,6 +5,75 @@ cd "$(dirname "$0")/.."
 
 python -m pip install "OpenJarvis[server,inference-google]==1.0.4" "google-genai<3.0.0"
 
+
+# Render's start command is fixed in the dashboard to an older Gemini model.
+# Keep the existing free service, migrate startup to the supported Gemini 3.8
+# model, and ensure previously saved iPhone chats continue to work.
+python - <<'PY'
+from importlib.util import find_spec
+from pathlib import Path
+import sys
+
+launcher = Path(sys.executable).parent / "jarvis"
+launch_src = launcher.read_text()
+if "import sys\n" not in launch_src:
+    raise RuntimeError("OpenJarvis launcher changed; refusing unsafe model migration")
+shim = (
+    "import sys\n"
+    "# Use supported Gemini model for this existing Render start command.\n"
+    "for _i in range(len(sys.argv) - 1):\n"
+    "    if sys.argv[_i] in ('--model', '-m') and sys.argv[_i + 1] == 'gemini-2.5-flash':\n"
+    "        sys.argv[_i + 1] = 'gemini-3.8-flash'\n"
+)
+launch_src = launch_src.replace("import sys\n", shim, 1)
+compile(launch_src, str(launcher), "exec")
+
+spec = find_spec("openjarvis.engine.cloud")
+if not spec or not spec.origin:
+    raise RuntimeError("Installed OpenJarvis cloud engine missing")
+engine_path = Path(spec.origin)
+engine_src = engine_path.read_text()
+model_list = "_GOOGLE_MODELS = [\n"
+if model_list not in engine_src:
+    raise RuntimeError("OpenJarvis Google model list changed")
+engine_src = engine_src.replace(
+    model_list,
+    'def _render_legacy_model(model: str) -> str:\n'
+    '    return "gemini-3.8-flash" if model == "gemini-2.5-flash" else model\n\n\n'
+    + model_list + '    "gemini-3.8-flash",\n',
+    1,
+)
+legacy_config = (
+    "config = genai_types.GenerateContentConfig(\n"
+    "            temperature=temperature,\n"
+    "            max_output_tokens=max_tokens,\n"
+    "        )"
+)
+modern_config = (
+    "config = genai_types.GenerateContentConfig(\n"
+    "            max_output_tokens=max_tokens,\n"
+    "        )"
+)
+config_count = engine_src.count(legacy_config)
+if not config_count:
+    raise RuntimeError("Google config signature changed")
+engine_src = engine_src.replace(legacy_config, modern_config)
+legacy_call = "model=model,\n            contents=contents,\n            config=config,"
+call_count = engine_src.count(legacy_call)
+if not call_count:
+    raise RuntimeError("Google SDK call sites changed")
+engine_src = engine_src.replace(
+    legacy_call,
+    "model=_render_legacy_model(model),\n            contents=contents,\n            config=config,",
+)
+compile(engine_src, str(engine_path), "exec")
+launcher.write_text(launch_src)
+engine_path.write_text(engine_src)
+print(f"Gemini 3.8 migration: patched {config_count} config(s), {call_count} call(s)")
+PY
+jarvis serve --help > /dev/null
+
+
 # Render's Python runtime might not include a compatible Node toolchain.
 if ! command -v node >/dev/null 2>&1 || ! node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major>22||(major===22&&minor>=22)?0:1)' || ! command -v npm >/dev/null 2>&1; then
   case "$(uname -m)" in
